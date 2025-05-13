@@ -3,22 +3,9 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import time
-import os
+from io import BytesIO
 from docx import Document
 from docx.shared import Inches
-
-# 画像ダウンロード用関数
-def download_image(url, folder="images"):
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    filename = os.path.join(folder, url.split("/")[-1])
-    response = requests.get(url, stream=True)
-    if response.status_code == 200:
-        with open(filename, "wb") as file:
-            for chunk in response.iter_content(1024):
-                file.write(chunk)
-        return filename
-    return None
 
 # 検索してURLを取得する関数
 def search_and_scrape(search_query):
@@ -26,7 +13,7 @@ def search_and_scrape(search_query):
     result_links = []
     page_num = 1
     pattern = re.compile(r'/([1-9][0-9]{2,})[A-Za-z]\d{2}')
-    
+
     while page_num <= 6:
         if page_num == 1:
             url = f'https://medu4.com/quizzes/result?q={search_query}&st=all'
@@ -51,7 +38,7 @@ def search_and_scrape(search_query):
     full_urls = [f"https://medu4.com{link}" for link in result_links]
     return full_urls
 
-# ページ内容を取得（画像あり／なし切替対応）
+# ページ内容を取得（複数画像対応）
 def get_page_text(url, get_images=True):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -84,11 +71,12 @@ def get_page_text(url, get_images=True):
     if get_images:
         image_divs = soup.find_all('div', class_='box-quiz-image mb-32')
         for div in image_divs:
-            img_tag = div.find('img')
-            if img_tag and img_tag.get('src'):
-                img_url = img_tag['src']
-                img_url_full = img_url.replace('thumb_', '')
-                image_urls.append(img_url_full)
+            a_tags = div.find_all('a')
+            for a_tag in a_tags:
+                href = a_tag.get('href')
+                if href and href.endswith('.jpg'):
+                    full_image_url = href.replace('thumb_', '')
+                    image_urls.append(full_image_url)
 
     return {
         "category": category_name,
@@ -100,7 +88,7 @@ def get_page_text(url, get_images=True):
         "images": image_urls
     }
 
-# Word出力（画像あり対応）
+# Wordファイル作成（画像埋め込み対応）
 def create_word_doc(pages_data, search_query, include_images=True):
     doc = Document()
     doc.add_heading('検索結果', 0)
@@ -113,12 +101,16 @@ def create_word_doc(pages_data, search_query, include_images=True):
 
         if include_images and page_data['images']:
             for img_url in page_data['images']:
-                img_path = download_image(img_url)
-                if img_path:
-                    doc.add_paragraph()
-                    doc.add_picture(img_path, width=Inches(2.5))
-                else:
-                    doc.add_paragraph(f"画像取得失敗: {img_url}")
+                try:
+                    response = requests.get(img_url)
+                    if response.status_code == 200:
+                        image_stream = BytesIO(response.content)
+                        doc.add_paragraph()
+                        doc.add_picture(image_stream, width=Inches(2.5))
+                    else:
+                        doc.add_paragraph(f"画像取得失敗: {img_url}")
+                except Exception as e:
+                    doc.add_paragraph(f"画像取得中エラー: {e}")
 
         doc.add_paragraph("選択肢:")
         for choice in page_data['choices']:
@@ -132,7 +124,7 @@ def create_word_doc(pages_data, search_query, include_images=True):
     return filename
 
 # Streamlit UI
-st.title("Medu4 検索ツールNew2")
+st.title("Medu4 検索ツールNew3")
 search_query = st.text_input("検索ワードを入力してください")
 
 col1, col2 = st.columns(2)

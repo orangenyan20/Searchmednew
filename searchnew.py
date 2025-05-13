@@ -132,37 +132,42 @@ def create_word_doc(pages_data, search_query, include_images=True):
     return filename
 
 # Streamlit UI
-st.title("Medu4 検索ツールNew")
+st.title("Medu4 検索ツールNew2")
 search_query = st.text_input("検索ワードを入力してください")
 
 col1, col2 = st.columns(2)
 
+def run_search(get_images: bool):
+    with st.spinner("検索中..."):
+        result_pages = search_and_scrape(search_query)
+
+    if result_pages:
+        st.write(f"{len(result_pages)}件の問題が見つかりました。")
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        pages_data = []
+        for i, url in enumerate(result_pages):
+            page_data = get_page_text(url, get_images=get_images)
+            pages_data.append(page_data)
+
+            progress = int((i + 1) / len(result_pages) * 100)
+            progress_bar.progress(progress)
+            status_text.text(f"{i + 1} / {len(result_pages)} 件取得中...")
+
+        with st.spinner("Wordファイル作成中..."):
+            filename = create_word_doc(pages_data, search_query, include_images=get_images)
+
+        st.success("Wordファイルが完成しました！")
+        with open(filename, "rb") as file:
+            st.download_button("📄 Wordファイルをダウンロード", file, file_name=filename)
+    else:
+        st.error("検索結果がありませんでした。")
+
 with col1:
     if st.button("🔍 検索（画像あり）"):
-        with st.spinner("検索中（画像あり）..."):
-            result_pages = search_and_scrape(search_query)
-
-        if result_pages:
-            pages_data = [get_page_text(url, get_images=True) for url in result_pages]
-            with st.spinner("Wordファイル作成中..."):
-                filename = create_word_doc(pages_data, search_query, include_images=True)
-            st.success("検索結果（画像付き）を Word に保存しました！")
-            with open(filename, "rb") as file:
-                st.download_button("📄 Wordファイルをダウンロード", file, file_name=filename)
-        else:
-            st.error("検索結果がありませんでした。")
+        run_search(get_images=True)
 
 with col2:
     if st.button("⚡ 検索（画像なし）"):
-        with st.spinner("検索中（画像なし）..."):
-            result_pages = search_and_scrape(search_query)
-
-        if result_pages:
-            pages_data = [get_page_text(url, get_images=False) for url in result_pages]
-            with st.spinner("Wordファイル作成中..."):
-                filename = create_word_doc(pages_data, search_query, include_images=False)
-            st.success("検索結果（画像なし）を Word に保存しました！")
-            with open(filename, "rb") as file:
-                st.download_button("📄 Wordファイルをダウンロード", file, file_name=filename)
-        else:
-            st.error("検索結果がありませんでした。")
+        run_search(get_images=False)
